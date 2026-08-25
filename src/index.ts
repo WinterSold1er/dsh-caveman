@@ -1,17 +1,17 @@
 /**
  * dsh-caveman host half: injects an output-terseness rule into the model's
- * system prompt, driven by commands and persisted to a private state file.
+ * system prompt, driven by chat commands AND a browser UI, persisted to a
+ * private state file.
  *
- * WHY COMMANDS, NOT SETTINGS:
+ * WHY A BROWSER HALF WITH CUSTOM HTTP ROUTES (NOT SETTINGS):
  * The dsh API gateway serves only an allowlisted set of settings namespaces to
- * the browser (model-provider namespaces + a hardcoded WEB/PRODUCT allowlist).
- * A plugin-owned namespace like `dsh-caveman` is filtered out with
- * `settings-not-exposed`, so a settings-page toggle can never read or write it.
- * Instead we follow the dsh-headroom pattern: host commands (caveman-on/off/
- * level/status) mutate an in-memory state and persist it to a private JSON file,
- * and the browser half drives them through the command remote.
+ * the browser (model-provider namespaces + hardcoded WEB/PRODUCT allowlists).
+ * A plugin-owned namespace is filtered with `settings-not-exposed`, so a
+ * settings-page toggle can never read or write it through the settings API.
+ * The proven escape hatch (used by dsh-market) is a dual-face plugin: the host
+ * half registers plain HTTP routes on ctx.webServer and the browser half
+ * fetches them directly. Same-origin checks guard writes.
  */
-
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-commands'
@@ -19,6 +19,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { DEFAULT_LEVEL, LEVELS, PLUGIN_NAME, SECTION_ORDER, type CavemanLevel } from './constants.ts'
+import { mountCavemanRoutes } from './routes.ts'
 
 export const name = PLUGIN_NAME
 export const inject = ['systemPrompt', 'commands']
@@ -117,4 +118,18 @@ export function apply(ctx: Context): void {
       },
     })
   }, 'dsh-caveman lifecycle')
+
+  // Browser UI data plane. webServer only exists in web profiles — a CLI-only
+  // deployment simply skips mounting and keeps commands + skill working.
+  // IMPORTANT: use ctx.inject, NOT ctx.get — plugin apply() runs BEFORE the
+  // webServer service is started, so a synchronous ctx.get('webServer')
+  // returns undefined and the routes silently never mount (observed as the
+  // SPA fallback answering /caveman/*). inject defers until it exists.
+  ctx.inject(['webServer'], (scoped: Context) => {
+    scoped.effect(() => mountCavemanRoutes(
+      scoped,
+      () => state,
+      (next) => setState(next),
+    ), 'dsh-caveman ui routes')
+  })
 }

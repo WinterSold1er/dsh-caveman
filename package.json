@@ -1,15 +1,17 @@
 {
   "name": "dsh-caveman",
-  "version": "0.2.0",
-  "description": "让 AI 少说废话、精简输出的 DeepSeek Harness 插件：设置页开关 + 档位选择，注入 system prompt 规则（caveman 移植，只含 skill 层输出精简）",
+  "version": "0.3.0",
+  "description": "让 AI 少说废话、精简输出的 DeepSeek Harness 插件：设置页开关 + 输入框一键切换 + 档位选择，注入 system prompt 规则（caveman 移植）",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
+    "./client": "./client/client.js",
     "./package.json": "./package.json"
   },
   "files": [
     "lib",
+    "client",
     "src",
     "scripts",
     "skills",
@@ -19,6 +21,9 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
     }
   },
   "scripts": {
