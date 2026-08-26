@@ -70,6 +70,22 @@ caveman 有三层：skill（输出精简）、proxy（输入压缩）、browse�
 
 一个管**进**（把发给模型的输入压到最省，还不破坏缓存），一个管**出**（把模型吐出来的输出压到最省）。两个都装，token 消耗逼近理论下限。
 
+### 组合实测（2026-08-26，dsh web + Headroom v0.35.0 / dsh-headroom-suite + deepseek-v4-flash）
+
+两者**完全兼容、无冲突**，已验证可叠加省 token。每组开全新 session 切到 `deepseek-official`，
+开放题（TCP 三次握手、HTTP/2 改进）各问 2 轮，对比 caveman 关 / ultra：
+
+- **Headroom 代理层（透明，与 caveman 无关）**：每请求稳定压缩约 **173 tok**（主要是 tool_schema 压缩，占输入约 1.2%）；
+  真正的大头是**前缀缓存命中**——每轮 18k–37k tok 命中缓存（按 DeepSeek 1/10 价计费），长会话收益最大。
+- **caveman 输出侧**：ultra 档相对关闭，**输出 token 省 ~36.6%**（4098 → 2597）。
+- **组合**：输入侧重复上下文由 Headroom 转前缀缓存（约 1/10 价），输出侧由 caveman 砍约 37%，二者打在不同层、可同时开。
+
+> 想最大化省费，**稳定系统提示让 Headroom 冻结前缀缓存**比 caveman 档位更关键；长期会话 + 固定系统提示收益最大。
+> 详细分工表与启动注意事项见 [dsh-headroom-suite](https://github.com/wjxn13/dsh-headroom-suite) README。
+
+> 注意：本机旧测 8/17 的 ultra 节省 92% 是「8 任务 × 5 档」短答基准（输出 token 相对 baseline），
+> 与本测「开放长答」场景不同，二者不矛盾——长答里修饰空间更小、且 Headroom 缓存摊薄了总成本，故 ultra 净省约 37%。
+
 ## 设置页开关为何移除（攻坚留档）
 
 本插件最初想做「设置页可点击开关」，但在 dsh 当前版本下第三方插件**无法在设置页放自己的开关**，三条路全被堵：
