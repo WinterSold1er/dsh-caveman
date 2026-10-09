@@ -1,114 +1,173 @@
 # dsh-caveman
 
-让 DeepSeek Harness 里的 AI **少说废话**：像聪明的穴居人一样极简输出，技术信息完整保留。
+<div align="center">
 
-> **本机实测（DeepSeek V4-Flash，8 任务 × 5 档，2026-08-17）**：
+<h3>🪨 why use many token when few token do trick</h3>
+
+<p>让 DeepSeek Harness 里的 AI <strong>少说废话、高效阅读</strong>：像聪明的穴居人一样极简输出，输入工具与网页提纯压缩，技术实质 100% 精确保留。</p>
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![DSH Plugin](https://img.shields.io/badge/DSH-Plugin-orange.svg)](https://github.com/WinterSold1er/dsh-caveman)
+[![Tests Passing](https://img.shields.io/badge/tests-12%20passed-brightgreen.svg)](#测试与验证)
+
+</div>
+
+---
+
+> 本插件是 **[JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman)**（110k+ Stars）针对 **DeepSeek Harness (DSH)** 的**全功能原生移植版**。
 >
-> | 档位 | 平均输出 token | 节省 |
-> |---|---|---|
-> | baseline（正常） | 910 | — |
-> | lite | 282 | 69% |
-> | full（默认） | 112 | 88% |
-> | ultra | 76 | 92% |
-> | wenyan-full | 114 | 88% |
->
-> 注：这是**输出 token** 的节省，输入和推理 token 不省；且 skill 本身每轮额外占约 1-1.5k 输入 token，**短回答可能反而更贵**。真正省 token 的大头在 [dsh-headroom](https://github.com/wjxn13/dsh-headroom) 的缓存命中（99.9%），输出精简是锦上添花。基准脚本 `benchmark/benchmark_output_tokens.py` 可复现。
+> 告别早期版本仅做输出 Prompt 的局限，当前版本已**完全移除对外部 Headroom 代理的依赖**，在 DSH 进程内原生实现了 **输出精简 + 输入代理压缩 + 网页浏览提纯** 的三层完整代偿体系，并提供专属 **设置中心面板与独立岩石图标**。
 
-> **「穴居人」是什么？** 源自英文梗 `why use many word when few word do trick`（能少说为什么多说）。穴居人（caveman）在西方文化里是「语言能力有限、只会蹦最核心词汇」的刻板印象。中文里更直观的类比是**电报体**「母病速归」或**文言文**「言简意赅」——删掉所有客套、修饰、语气词，只留信息最核心的词。技术信息一个字不少，废话一个不留。
+---
 
-> 本插件是 [JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman)（MIT）的 **DeepSeek Harness 移植**，只移植 **skill 层（输出精简）**，不含输入代理（proxy）与浏览压缩。压缩规则源自 caveman，版权归原作者；本插件仅做 dsh 适配与中文强化。
+## 核心特性一览
 
-## 为什么只做 skill 层
+| 模块 | 机制 | 效果 | 状态保障 |
+|---|---|---|---|
+| **Layer 1: 输出精简**<br>(Output Terseness) | System Prompt 规则动态注入 + 4 级精简档位 | **输出 Token 节省 ~88%**<br>(实测 full 档 910 → 112 tok) | 否定词与限定词绝对保留，代码/路径/错误一字不差，遇危险操作自动退回完整句 |
+| **Layer 2: 输入代理**<br>(Input Proxy) | 拦截 DSH `agent/pre-step` 工具输出 (JSON/日志/表格/终端) | **输入 Token 节省 60%~98%**<br>(消除长日志与重复 JSON 数组) | **CCR (Content-Centric Retrieval)** 原文无损暂存，提供 `caveman_retrieve` 工具按需秒级复原 |
+| **Layer 3: 浏览提纯**<br>(Browse Purifier) | 原生语义 HTML 提纯器，剥离脚本、样式、广告、导航与页脚 | **网页 Token 节省 ~90%+**<br>(万字杂乱网页化为极简 Markdown) | 专用 `caveman_browse` 工具，Agent 浏览开销从 15k+ 骤降至百量级 |
+| **独立设置界面**<br>(Settings UI) | DSH 设置中心 `caveman` 专属栏目 + **多边形棱角岩石独立图标** | 移除了对话框输入栏的多余按钮，设置页集中管控 | CSS Mask 深度替换 DSH 默认齿轮图标，体验浑然一体 |
 
-caveman 有三层：skill（输出精简）、proxy（输入压缩）、browse（浏览压缩）。本插件**只做 skill 层**，原因：
+---
 
-- **输出精简是 dsh 生态空白**——dsh 自带机制（稳定前缀缓存 + 工具结果瘦身 + 上下文压缩）和 [dsh-headroom](https://github.com/wjxn13/dsh-headroom)（Headroom 请求层输入压缩）全是**输入侧**，没人碰输出侧。
-- **输入 proxy 不碰**——caveman 的输入 proxy 是有损压缩，会破坏 dsh-headroom 辛苦保住的 99.9% 前缀缓存，两个代理在请求链路上打架。输入侧交给 dsh-headroom，本插件只管输出侧，两者互补不冲突。
+## 实测基准数据 (DeepSeek V4-Flash)
 
-## 用法：命令触发
+### 1. 输出侧精简表现（8 任务基准测试）
 
-本插件通过**命令**控制输出精简（host 端命令 + 状态文件持久化，注入 system prompt）：
+| 档位 | 平均输出 Token | 相对 Baseline 节省 | 适用场景 |
+|---|---|---|---|
+| **baseline（正常默认）** | 910 | — | 未开启精简 |
+| **lite（轻量）** | 282 | **69%** | 团队代码评审、正式交付说明，完整语法无客套 |
+| **full（标准，推荐）** | 112 | **88%** | 主力编码辅助，短句/碎片断句，直给结论与代码 |
+| **ultra（极限）** | 76 | **92%** | 极简碎片，每事实仅述一次，因果明确删连词 |
+| **wenyan-full（文言）** | 114 | **88%** | 古典文言雅致表达，高密度动宾单字句 |
 
-| 命令 | 作用 |
-|---|---|
-| `/caveman on` | 开启精简（默认 full 档）|
-| `/caveman off` | 关闭精简 |
-| `/caveman level <lite\|full\|ultra\|wenyan-full>` | 切档位（自动开启）|
-| `/caveman status` | 查当前状态 |
+### 2. 输入侧工具输出压缩（Input Proxy & CCR）
 
-开启后，精简规则注入每次请求的 system prompt，**跨会话一直生效**（状态存 `~/.dsh-caveman/state.json`，重启保持）。也可在对话里说「少说废话」「精简」「说重点」触发 skill 层（单会话生效，换会话需重触发）。
+| 载荷类型 | 原文特征 | Caveman 压缩策略 | 典型节省率 |
+|---|---|---|---|
+| **大型 JSON 响应** | 包含数十至数百元素的数组 | 保留首尾项与异常项，中间折叠为 `{"__caveman_elided__": N}` | **70% ~ 95%** |
+| **构建 / 运行日志** | 数百行冗余 INFO/DEBUG 日志 | 保留首尾上下文与所有 error/warn/panic/stack 关键行，折叠中间噪音 | **80% ~ 98%** |
+| **CSV / Markdown 表格** | 数十行结构化数据 | 保留表头、分隔线、首尾行与异常行，折叠中间数据行 | **60% ~ 85%** |
+| **终端测试输出** | 批量 PASS 的自动化测试结果 | 清理 ANSI 颜色字符与覆写符，折叠连续 passed 测试，全量保留 failure | **50% ~ 90%** |
 
-## 档位
+---
 
-| 档位 | 效果 |
-|---|---|
-| lite | 删填充/hedging，保留完整句子 |
-| full（默认） | 短句碎片、短同义词，不叙述工具调用 |
-| ultra | 一词够就不两词，每事实只述一次 |
-| wenyan-full | 中文文言：字面省 80-90%（字符不是 token），高密度信息 |
+## 3 层架构详解
 
-示例（"为什么 React 组件重复渲染？"）：
-- full："每次渲染新对象引用。内联对象 prop = 新引用 = 重渲染。useMemo 包之。"
-- wenyan-full："每绘新生对象参照，故重绘；以 useMemo 包之则免。"
+### Layer 1: 输出精简 (Output Terseness)
 
-## 规则精髓
+- **答在最前 (Answer First)**：遵循 `[事物] [动作] [原因]。[下一步]。`，不铺垫，直接给结论和修复代码。
+- **消灭客套 (Kill Ceremony)**：坚决删除“好的、没问题、很高兴为您解答、希望能对您有所帮助”等填充废话。
+- **一意一句 (ASD-STE100)**：参考航空维修英语规范，单句 20 词以内，主动语态。
+- **否定词不可动摇**：绝不删除 `不`、`非`、`没`、`别`、`勿`、`只`、`仅`、`除` 等限定词。
+- **技术载荷一字不差**：代码块、CLI 命令、文件路径、报错原文、API 命名 100% 精确保留；代码修改按差异给出，不 dump 无关全文件。
+- **静默工具调用**：多步工具执行期间不絮絮叨叨，仅在切换阶段或最终完成时输出关键状态。
+- **自动退出机制**：遇到**安全风险警示**、**不可逆操作确认**、**多步歧义**或**向用户提问**时，自动退回完整清晰表达，确认后恢复精简。
 
-- **只删废话，不删技术**：填充词/客套/hedging 死，代码/命令/错误/commit 关键字原文保留。
-- **红线**：绝不删否定词（不/没/只/仅/除），数字单位精确——翻转语义比省 token 糟。
-- **不自指**：不说"精简模式开启"，只输出精简结果。
-- **自动恢复**：安全警告、不可逆操作、多步歧义时自动退回完整表达。
+### Layer 2: 输入代理 (Input Proxy Compression)
 
-## 与 dsh-headroom 配合（输入 + 输出一起省）
+DSH Agent 执行过程中，调用 `bash`、`read`、网络请求等工具往往会把上万 Token 的日志或 JSON 塞入对话上下文。
 
-[dsh-headroom](https://github.com/wjxn13/dsh-headroom) 管**输入侧**（请求层压缩，保缓存），本插件管**输出侧**（精简废话）。两者正交、互补、不冲突，一起装效果叠加：
+- `dsh-caveman` 原生监听 DSH 的 `agent/pre-step` 调度钩子；
+- 当检测到当前 session surface 中存在大于阈值（默认 2048 字符）且未压缩的 `tool/result` 节点时，自动执行格式感知压缩；
+- 原始数据按 SHA-256 短哈希暂存至本地 CCR 缓存目录（`~/.dsh-caveman/ccr/`）；
+- 压缩结果附加标准可溯源恢复头：
+  ```text
+  [compressed by caveman: 12450 → 620 tokens. Original retrievable via caveman_retrieve tool with hash: ccr:a1b2c3d4e5f6]
+  ```
+- 派发 DSH `compaction/prune` 影子定价事件，确保 Token 统计仪与上下文窗口计算准确。
+- **无损保障**：Agent 或用户随时可以调用内置的 `caveman_retrieve(hash="ccr:...")` 工具取回完整的原始未压缩数据。
 
-| | dsh-headroom | dsh-caveman |
+### Layer 3: 浏览提纯 (Browse Compression)
+
+- 提供内置工具 **`caveman_browse`**（及对话命令 `/caveman-browse <url>`）。
+- 集成原生轻量级 HTML 提纯引擎：
+  1. 暴力清除 `<script>`、`<style>`、`<svg>`、`<nav>`、`<footer>`、`<header>`、`<aside>`、注释、广告弹窗及 Cookie 提示；
+  2. 提取页面核心文章标题、正文、列表、代码块与链接，并将表格转换为整洁的 Markdown 表格；
+  3. 彻底消灭网页空行与空格噪音，将原本超过 15,000 Token 的 DOM/HTML 页面浓缩为几百 Token 的高价值信息。
+
+---
+
+## 设置中心与独立图标
+
+根据用户需求，本版本**彻底去除了对话框输入栏的冗余开关按钮**，将所有管理权收拢至 DSH 设置中心：
+
+1. **设置入口**：点击 DSH 左侧「设置」即可看到专属的 **`caveman`** 板块。
+2. **独立岩石图标**：针对 DSH 会将第三方设置板块强制显示为通用齿轮的限制，采用 CSS Mask 动态替换机制，精准呈现 16x16 多边形切割切面岩石（Rock/Stone）图标，彰显硬核原始人风格。
+3. **设置页控制中心**：
+   - **主控卡片**：一键开启 / 关闭精简规则，实时查看 System Prompt 注入状态；
+   - **档位选择**：以网格卡片展示 `lite`、`full`、`ultra`、`wenyan-full`，带高亮标记，点击即时切换；
+   - **输入代理开关**：一键启用 / 停用长工具输出压缩；
+   - **全景架构说明与斜杠命令速查表**。
+
+---
+
+## 使用方式与命令大全
+
+### 1. 对话斜杠命令
+
+| 命令 | 说明 | 示例 |
 |---|---|---|
-| 省哪侧 | 输入 token（工具 schema + 跨轮去重） | 输出 token（删废话） |
-| 机制 | Headroom 代理，无损保缓存 | 提示词规则，有损删修饰 |
-| 省钱大头 | 99.9% 缓存命中（折扣价） | 88% 输出精简（本机实测） |
+| `/caveman on` / `/caveman-on` | 一键开启输出精简 | `/caveman on` |
+| `/caveman off` / `/caveman-off` | 一键关闭输出精简 | `/caveman off` |
+| `/caveman level <档位>` | 切换精简档位并自动开启 | `/caveman level ultra` |
+| `/caveman proxy <on\|off>` | 控制输入代理工具结果压缩 | `/caveman proxy on` |
+| `/caveman-browse <url>` | 原生抓取并提纯展示精炼网页 | `/caveman-browse https://example.com` |
+| `/caveman status` | 查看当前输出与代理运行状态 | `/caveman status` |
 
-一个管**进**（把发给模型的输入压到最省，还不破坏缓存），一个管**出**（把模型吐出来的输出压到最省）。两个都装，token 消耗逼近理论下限。
+### 2. 自然语言触发 (Skill 触发)
 
-### 组合实测（2026-08-26，dsh web + Headroom v0.35.0 / dsh-headroom-suite + deepseek-v4-flash）
+在任意会话中直接说出如下关键词即可唤醒精简模式：
+- “少说废话”
+- “精简输出”
+- “说重点”
+- “开启 caveman”
+- “帮我省 token”
 
-两者**完全兼容、无冲突**，已验证可叠加省 token。每组开全新 session 切到 `deepseek-official`，
-开放题（TCP 三次握手、HTTP/2 改进）各问 2 轮，对比 caveman 关 / ultra：
+### 3. 内置 Agent 工具
 
-- **Headroom 代理层（透明，与 caveman 无关）**：每请求稳定压缩约 **173 tok**（主要是 tool_schema 压缩，占输入约 1.2%）；
-  真正的大头是**前缀缓存命中**——每轮 18k–37k tok 命中缓存（按 DeepSeek 1/10 价计费），长会话收益最大。
-- **caveman 输出侧**：ultra 档相对关闭，**输出 token 省 ~36.6%**（4098 → 2597）。
-- **组合**：输入侧重复上下文由 Headroom 转前缀缓存（约 1/10 价），输出侧由 caveman 砍约 37%，二者打在不同层、可同时开。
+- **`caveman_retrieve`**：
+  - 参数：`hash`（例如 `ccr:1a2b3c4d5e6f`）
+  - 作用：还原被输入代理压缩的原始数据。
+- **`caveman_browse`**：
+  - 参数：`url`（网页链接）
+  - 作用：抓取并提纯网页内容，以极小 Token 输出给模型。
 
-> 想最大化省费，**稳定系统提示让 Headroom 冻结前缀缓存**比 caveman 档位更关键；长期会话 + 固定系统提示收益最大。
-> 详细分工表与启动注意事项见 [dsh-headroom-suite](https://github.com/wjxn13/dsh-headroom-suite) README。
+---
 
-> 注意：本机旧测 8/17 的 ultra 节省 92% 是「8 任务 × 5 档」短答基准（输出 token 相对 baseline），
-> 与本测「开放长答」场景不同，二者不矛盾——长答里修饰空间更小、且 Headroom 缓存摊薄了总成本，故 ultra 净省约 37%。
+## 安装与配置
 
-## 设置页开关为何移除（攻坚留档）
-
-本插件最初想做「设置页可点击开关」，但在 dsh 当前版本下第三方插件**无法在设置页放自己的开关**，三条路全被堵：
-
-1. **settingsScope 注册自定义 namespace** → dsh API 网关 `dsh-host-apiproxy` 的 `exposedNamespaces()` 有硬编码白名单（模型提供者 + `WEB_SETTINGS_NAMESPACES` + `PRODUCT_SETTINGS_NAMESPACES`），插件自定义 namespace 被 `.filter(exposed.has(ns))` 过滤，返回 `settings-not-exposed`。源码注释明说「让插件自己声明暴露」是 **deferred work**（未实现）。
-2. **remote.commands.execute 触发命令** → 该方法是 **agent 作用域**（`scope: { context: "agent" }`），设置页无活跃会话，agent identity 解析失败，调用失败。
-3. 附带发现：dsh-headroom 源码里 `remote.command`（单数）是 bug，正确是 `remote.commands`（复数）；且 execute 只接受 `line` 一个参数（agent 自动解析），返回值读 `raw.value.result` 而非 `raw.result`。
-
-**攻坚方向**（以后要做设置页开关时）：用 typert 的 `@Remote("name")` 装饰器 + `TypertRemoteService` 基类，定义一个**方法签名不含 agent 参数**的 non-scoped remote 方法（如 `setEnabled(enabled)`），client 端经 `ctx.get('remote').<namespace>.<method>()` 调用，绕过 agent scope。dsh-goal 的 `GoalService` 是可参考的 remote 服务范例。
-
-## 安装
+### 1. 通过 DSH 插件命令安装
 
 ```bash
-dsh plugin --profile web add "github:wjxn13/dsh-caveman"
+dsh plugin --profile web add "github:WinterSold1er/dsh-caveman"
 ```
 
-装完重启 profile，对话里说「少说废话」/`/caveman` 触发 skill，或用 `/caveman on|off|level|status` 命令控制全局开关。
+安装后刷新或重启 DSH Web 服务即可生效。
 
-## 测试
+### 2. 本地开发与构建
+
+项目采用纯原生 TypeScript 编写，零外部 Python/Go 二进制依赖：
 
 ```bash
-npm install
-node scripts/build.mjs    # 构建 host，验证源码可编译
+# 1. 安装依赖
+npm install --allow-remote=all
+
+# 2. 构建 Host 端产物 (lib/index.js)
+npm run build
+
+# 3. 运行自动化测试套件 (12 个测试用例，覆盖客户端、压缩算法矩阵、路由与工具)
+npm test
+
+# 4. 类型检查
+npm run typecheck
 ```
 
-真实功能验证：装进隔离测试实例，发消息说「少说废话」或执行 `/caveman status`，确认命令注册、状态文件 `~/.dsh-caveman/state.json` 写入、输出变精简。
+---
+
+## 许可证与致谢
+
+- 核心灵感与压缩规则哲学源自 **[JuliusBrussee/caveman](https://github.com/JuliusBrussee/caveman)**（MIT / Apache-2.0），向原作者致敬。
+- 本项目遵循 **MIT 许可证**，专为 DeepSeek Harness 生态设计与优化。

@@ -11,16 +11,20 @@
  * All writes check same-origin (Origin header must match Host) so a cross-site
  * page cannot flip the toggle through the user's browser (CSRF).
  */
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
-import { LEVELS, PLUGIN_NAME, DEFAULT_LEVEL, type CavemanLevel } from './constants.ts'
+import { LEVELS, DEFAULT_COMPRESSION_THRESHOLD, type CavemanLevel } from './constants.ts'
 
-interface CavemanConfig {
+export interface CavemanConfig {
   enabled: boolean
   level: CavemanLevel
+  inputCompression?: boolean
+  inputProxy?: boolean
+  compressionThreshold?: number
 }
 
 /** True when the request originates from the served web app (Origin === Host). */
-function sameOrigin(request: { headers: { origin?: string, host?: string } }): boolean {
+function sameOrigin(request: { headers: { origin?: string; host?: string } }): boolean {
   const origin = request.headers.origin
   const host = request.headers.host
   if (origin === undefined || host === undefined) return false
@@ -31,7 +35,7 @@ function sameOrigin(request: { headers: { origin?: string, host?: string } }): b
   }
 }
 
-function sendJson(response: import('node:http').ServerResponse, status: number, body: unknown): void {
+function sendJson(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, {
     'cache-control': 'no-store',
     'content-type': 'application/json; charset=utf-8',
@@ -40,7 +44,7 @@ function sendJson(response: import('node:http').ServerResponse, status: number, 
 }
 
 /** Read a JSON request body up to maxBytes; rejects oversize with null. */
-async function readJsonBody(request: import('node:http').IncomingMessage, maxBytes = 4096): Promise<unknown> {
+async function readJsonBody(request: IncomingMessage, maxBytes = 4096): Promise<unknown> {
   const chunks: Buffer[] = []
   let size = 0
   for await (const chunk of request) {
@@ -74,7 +78,7 @@ export function mountCavemanRoutes(
   // Caller MUST acquire webServer via ctx.inject(['webServer'], ...) — see
   // index.ts. A synchronous ctx.get here would race plugin load order and
   // silently skip mounting.
-  const webServer = ctx.get('webServer')
+  const webServer = (ctx as any).get('webServer')
   if (webServer === undefined) {
     console.error('[dsh-caveman] webServer service absent — UI routes not mounted')
     return () => {}
@@ -84,14 +88,21 @@ export function mountCavemanRoutes(
     webServer.register({
       kind: 'exact',
       path: '/caveman/status',
-      handler: (_request, response) => {
-        sendJson(response, 200, getState())
+      handler: (_request: IncomingMessage, response: ServerResponse) => {
+        const current = getState()
+        const inputComp = current.inputCompression ?? current.inputProxy ?? false
+        sendJson(response, 200, {
+          ...current,
+          inputCompression: inputComp,
+          inputProxy: inputComp,
+          compressionThreshold: current.compressionThreshold ?? DEFAULT_COMPRESSION_THRESHOLD,
+        })
       },
     }),
     webServer.register({
       kind: 'exact',
       path: '/caveman/state',
-      handler: async (request, response) => {
+      handler: async (request: IncomingMessage, response: ServerResponse) => {
         if (request.method !== 'POST') {
           sendJson(response, 405, { error: 'method not allowed; use POST' })
           return
@@ -102,19 +113,30 @@ export function mountCavemanRoutes(
           sendJson(response, 403, { error: 'untrusted origin' })
           return
         }
-        const body = (await readJsonBody(request)) as
-          | { enabled?: unknown, level?: unknown }
-          | undefined
+        const body = (await readJsonBody(request)) as Record<string, unknown> | undefined
         if (body === undefined || typeof body !== 'object') {
           sendJson(response, 400, { error: 'invalid JSON body' })
           return
         }
         const current = getState()
+        const inputComp = typeof body.inputCompression === 'boolean'
+          ? body.inputCompression
+          : typeof body.inputProxy === 'boolean'
+            ? body.inputProxy
+            : (current.inputCompression ?? current.inputProxy ?? false)
+
+        const threshold = typeof body.compressionThreshold === 'number' && body.compressionThreshold > 0
+          ? body.compressionThreshold
+          : (current.compressionThreshold ?? DEFAULT_COMPRESSION_THRESHOLD)
+
         const next: CavemanConfig = {
           enabled: typeof body.enabled === 'boolean' ? body.enabled : current.enabled,
           level: typeof body.level === 'string' && Object.hasOwn(LEVELS, body.level)
-            ? body.level as CavemanLevel
+            ? (body.level as CavemanLevel)
             : current.level,
+          inputCompression: inputComp,
+          inputProxy: inputComp,
+          compressionThreshold: threshold,
         }
         setState(next)
         sendJson(response, 200, next)

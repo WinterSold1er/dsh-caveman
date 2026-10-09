@@ -12,10 +12,7 @@
     "noEmit": true,
     "types": ["node"],
     "paths": {
-      "@deepseek-ai/cordis": ["D:/dsh/node_modules/@deepseek-ai/cordis/lib/index.d.ts"],
-      "@deepseek-ai/schemastery": ["D:/dsh/node_modules/@deepseek-ai/schemastery/lib/index.d.ts"],
-      "@deepseek-ai/dsh-system-prompt": ["D:/dsh/node_modules/@deepseek-ai/dsh-system-prompt/lib/types/index.d.ts"],
-      "@deepseek-ai/dsh-commands": ["D:/dsh/node_modules/@deepseek-ai/dsh-commands/lib/types/index.d.ts"]
+      "@deepseek-ai/*": ["/home/csy/Code/installer/deepseek-harness/node_modules/.pnpm/node_modules/@deepseek-ai/*"]
     }
   },
   "include": ["src"]
