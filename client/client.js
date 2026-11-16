@@ -10,7 +10,9 @@
  * 1. Output terseness: Prompt-injected terseness rules (lite / full / ultra / wenyan-full).
  * 2. Input proxy compression: Intercepts long tool outputs, compresses to key facts, caches in CCR.
  * 3. Browse compression: caveman_browse tool with HTML purification.
- * 4. Dedicated settings nav icon: Rock/stone SVG glyph via CSS mask injection + MutationObserver.
+ * 4. Dedicated settings nav icon: Rock/stone SVG glyph injected into the official
+ *    'settings.section.icon' slot with the same entry id as the settings section, so the
+ *    shell's renderSlot({ only: row.id }) matches it instead of its fallback gear.
  */
 window.__ModuleLoader__.load({
   id: 'dsh-caveman',
@@ -39,33 +41,25 @@ window.__ModuleLoader__.load({
     // ------------------------------------------------------------------
     // Dedicated Caveman Rock / Stone SVG Icon
     // ------------------------------------------------------------------
-    var CAVEMAN_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="#000">' +
-      '<polygon points="7,1.4 11.5,3.2 9.3,8.1 5.7,6.3"/>' +
-      '<polygon points="6.8,1.4 5.5,6.1 2.4,4.9"/>' +
-      '<polygon points="2.4,5.4 5.4,6.7 1.5,10.3"/>' +
-      '<polygon points="1.5,10.7 5.4,7.2 4.1,14.6"/>' +
-      '<polygon points="4.4,14.6 5.7,7.2 9.2,8.9 9.7,14.6"/>' +
-      '<polygon points="10.1,14.6 9.6,9.3 13.1,12.4"/>' +
-      '<polygon points="13.2,12 9.7,8.6 14.5,7.7"/>' +
-      '<polygon points="14.5,7.3 9.6,8.2 11.8,3.4"/>' +
-      '</svg>'
-
-    var CAVEMAN_MASK_URL = 'data:image/svg+xml,' + encodeURIComponent(CAVEMAN_SVG)
-    var NAV_ICON_MARKER = 'data-dsh-caveman-nav-icon'
-    var NAV_ROW_SELECTOR = '[role="dialog"] nav button, nav.dsw-settings-nav button, nav button'
-
-    /** Renderable React icon component declared in slot registration. */
+    /** Renderable rock glyph: the settings.section.icon slot entry for the caveman nav row. */
     function CavemanNavIcon(props) {
+      // The settings nav cell passes its own owner props ({ size, active }). They steer
+      // the glyph and must not be forwarded to <svg>, where they would render as foreign
+      // DOM attributes (and React warns on the boolean `active`).
+      var owner = Object.assign({}, props || {})
+      var requested = typeof owner.size === 'number' && owner.size > 0 ? owner.size : 16
+      delete owner.size
+      delete owner.active
       var p = Object.assign(
         {
           viewBox: '0 0 16 16',
-          width: 16,
-          height: 16,
+          width: requested,
+          height: requested,
           fill: 'currentColor',
           'aria-hidden': 'true',
           focusable: 'false',
         },
-        props || {}
+        owner
       )
       return React.createElement(
         'svg',
@@ -79,98 +73,6 @@ window.__ModuleLoader__.load({
         React.createElement('polygon', { points: '13.2,12 9.7,8.6 14.5,7.7' }),
         React.createElement('polygon', { points: '14.5,7.3 9.6,8.2 11.8,3.4' })
       )
-    }
-
-    /** Stylesheet replacing DSH fallback gear icon with Caveman rock mark. */
-    function navIconCss() {
-      return [
-        '[' + NAV_ICON_MARKER + '] > svg { display: none !important; }',
-        '[' + NAV_ICON_MARKER + ']::before {',
-        "  content: '';",
-        '  flex: none;',
-        '  width: 16px;',
-        '  height: 16px;',
-        '  background-color: currentColor;',
-        '  -webkit-mask-image: url("' + CAVEMAN_MASK_URL + '");',
-        '  mask-image: url("' + CAVEMAN_MASK_URL + '");',
-        '  -webkit-mask-repeat: no-repeat;',
-        '  mask-repeat: no-repeat;',
-        '  -webkit-mask-position: center;',
-        '  mask-position: center;',
-        '  -webkit-mask-size: 16px 16px;',
-        '  mask-size: 16px 16px;',
-        '}',
-      ].join('\n')
-    }
-
-    function isOwnNavRow(rowText, wantedLabel) {
-      var wanted = String(wantedLabel || '').trim().toLowerCase()
-      if (!wanted) return false
-      var actual = String(rowText || '').trim().toLowerCase()
-      return actual === wanted || actual.replace(/\s+/g, ' ').trim() === wanted || actual.indexOf(wanted) === 0
-    }
-
-    /**
-     * Installs the custom settings navigation icon for caveman section.
-     */
-    function installSettingsNavIcon(ctx, resolveLabel) {
-      if (typeof document === 'undefined') return
-
-      var mount = function () {
-        var tag = document.createElement('style')
-        tag.dataset.plugin = 'dsh-caveman'
-        tag.dataset.pluginCss = 'dsh-caveman/settings-nav-icon'
-        tag.textContent = navIconCss()
-        document.head.appendChild(tag)
-
-        var disposed = false
-        var scheduled = false
-
-        var sync = function () {
-          scheduled = false
-          if (disposed) return
-          var wanted = resolveLabel()
-          var rows = document.querySelectorAll(NAV_ROW_SELECTOR)
-          for (var i = 0; i < rows.length; i++) {
-            var row = rows[i]
-            if (isOwnNavRow(row.textContent, wanted)) {
-              row.setAttribute(NAV_ICON_MARKER, '')
-            } else if (row.hasAttribute(NAV_ICON_MARKER)) {
-              row.removeAttribute(NAV_ICON_MARKER)
-            }
-          }
-        }
-
-        var schedule = function () {
-          if (scheduled || disposed) return
-          scheduled = true
-          if (typeof queueMicrotask === 'function') {
-            queueMicrotask(sync)
-          } else {
-            setTimeout(sync, 0)
-          }
-        }
-
-        sync()
-        var observer = new MutationObserver(schedule)
-        observer.observe(document.body, { childList: true, subtree: true, characterData: true })
-
-        return function () {
-          disposed = true
-          observer.disconnect()
-          var marked = document.querySelectorAll('[' + NAV_ICON_MARKER + ']')
-          for (var j = 0; j < marked.length; j++) {
-            marked[j].removeAttribute(NAV_ICON_MARKER)
-          }
-          tag.remove()
-        }
-      }
-
-      if (ctx && typeof ctx.effect === 'function') {
-        ctx.effect(mount, 'dsh-caveman: settings nav icon')
-      } else {
-        mount()
-      }
     }
 
     // ------------------------------------------------------------------
@@ -635,10 +537,7 @@ window.__ModuleLoader__.load({
     var inject = ['slots']
 
     function apply(ctx) {
-      // 1. Install custom SVG rock nav icon hook in settings dialog nav
-      installSettingsNavIcon(ctx, function () { return 'caveman' })
-
-      // 2. Register top-level Settings section
+      // 1. Register top-level Settings section
       ctx.slots.inject('settings.section', function () {
         return ctx.slots.register(
           {
@@ -646,10 +545,25 @@ window.__ModuleLoader__.load({
             id: 'caveman',
             order: 45,
             label: function () { return 'caveman' },
-            icon: CavemanNavIcon,
             inject: function () { return {} },
           },
           CavemanSection
+        )
+      })
+
+      // 2. Claim this section's nav glyph. The shell renders every row with
+      //    renderSlot('settings.section.icon', { size, active }, { only: row.id, fallback: gear }),
+      //    so the entry id has to equal the settings.section id ('caveman') for `only` to
+      //    resolve it: a hit replaces the fallback gear rather than stacking under it.
+      ctx.slots.inject('settings.section.icon', function () {
+        return ctx.slots.register(
+          {
+            name: 'settings.section.icon',
+            id: 'caveman',
+            order: 45,
+            label: function () { return 'caveman' },
+          },
+          CavemanNavIcon
         )
       })
     }

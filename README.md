@@ -27,7 +27,7 @@
 | **Layer 1: 输出精简**<br>(Output Terseness) | System Prompt 规则动态注入 + 4 级精简档位 | **输出 Token 节省 ~88%**<br>(实测 full 档 910 → 112 tok) | 否定词与限定词绝对保留，代码/路径/错误一字不差，遇危险操作自动退回完整句 |
 | **Layer 2: 输入代理**<br>(Input Proxy) | 拦截 DSH `agent/pre-step` 工具输出 (JSON/日志/表格/终端) | **输入 Token 节省 60%~98%**<br>(消除长日志与重复 JSON 数组) | **CCR (Content-Centric Retrieval)** 原文无损暂存，提供 `caveman_retrieve` 工具按需秒级复原 |
 | **Layer 3: 浏览提纯**<br>(Browse Purifier) | 原生语义 HTML 提纯器，剥离脚本、样式、广告、导航与页脚 | **网页 Token 节省 ~90%+**<br>(万字杂乱网页化为极简 Markdown) | 专用 `caveman_browse` 工具，Agent 浏览开销从 15k+ 骤降至百量级 |
-| **独立设置界面**<br>(Settings UI) | DSH 设置中心 `caveman` 专属栏目 + **多边形棱角岩石独立图标** | 移除了对话框输入栏的多余按钮，设置页集中管控 | CSS Mask 深度替换 DSH 默认齿轮图标，体验浑然一体 |
+| **独立设置界面**<br>(Settings UI) | DSH 设置中心 `caveman` 专属栏目 + **多边形棱角岩石独立图标** | 移除了对话框输入栏的多余按钮，设置页集中管控 | 经 DSH 官方 `settings.section.icon` 槽注册，导航栏默认齿轮 fallback 被官方替换 |
 
 ---
 
@@ -95,7 +95,7 @@ DSH Agent 执行过程中，调用 `bash`、`read`、网络请求等工具往往
 根据用户需求，本版本**彻底去除了对话框输入栏的冗余开关按钮**，将所有管理权收拢至 DSH 设置中心：
 
 1. **设置入口**：点击 DSH 左侧「设置」即可看到专属的 **`caveman`** 板块。
-2. **独立岩石图标**：针对 DSH 会将第三方设置板块强制显示为通用齿轮的限制，采用 CSS Mask 动态替换机制，精准呈现 16x16 多边形切割切面岩石（Rock/Stone）图标，彰显硬核原始人风格。
+2. **独立岩石图标**：通过 DSH 官方 `settings.section.icon` 槽注册专属图标（注册 entry 的 id 必须与板块 id `caveman` 完全相同，槽的 `only` 才会命中），官方渲染时用岩石图标替换该行的通用齿轮 fallback，精准呈现 16x16 多边形切割切面岩石（Rock/Stone）图标，彰显硬核原始人风格。
 3. **设置页控制中心**：
    - **主控卡片**：一键开启 / 关闭精简规则，实时查看 System Prompt 注入状态；
    - **档位选择**：以网格卡片展示 `lite`、`full`、`ultra`、`wenyan-full`，带高亮标记，点击即时切换；

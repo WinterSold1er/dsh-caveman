@@ -1,6 +1,6 @@
 {
   "name": "dsh-caveman",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "让 AI 少说废话的 DeepSeek Harness 插件（官方 Caveman 完整移植）：输出精简 + 输入代理压缩 + 浏览提纯三层体系，设置页专属管理与独立岩石图标，零外部依赖",
   "type": "module",
   "main": "lib/index.js",
